@@ -24,6 +24,7 @@
 //
 
 #include "stdpch.h"
+#include <chrono>
 
 #include "time_task.h"
 
@@ -64,7 +65,14 @@ void CTimeTask::update()
 	OldTime = Time;
 
 	
+#ifdef NL_OS_MAC
+	// NeL's historical Mach timebase conversion assumes Intel's 1:1 ratio.
+	// Use a monotonic clock in seconds for input, camera and session timing.
+	double newTime = std::chrono::duration<double>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+#else
 	double newTime = NLMISC::CTime::ticksToSecond(NLMISC::CTime::getPerformanceTime());
+#endif
 
 	if(FirstUpdate)
 		FirstTime = newTime - 1; //-1 for replay 

@@ -430,6 +430,17 @@ void CControler::update()
 
 	if(VirtualFrameTime >= NetVirtualFrameDuration)
 	{
+		if (getenv("TUX_INPUT_DIAGNOSTICS"))
+		{
+			static double lastReport = 0;
+			if (CTimeTask::instance().time() - lastReport > 1.0)
+			{
+				nlinfo("INPUT command entity=%u open=%d accel=(%g,%g,%g) rot=%g pique=%g frame=%g",
+					EId, CEntityManager::getInstance()[EId].openClose(), Accel.x, Accel.y, Accel.z,
+					RotZ, Pique, VirtualFrameTime);
+				lastReport = CTimeTask::instance().time();
+			}
+		}
 		//TODO gerer la diff de temps entre _virtualFrameTime et NetVirtualFrameDuration
 		if(!CEntityManager::getInstance()[EId].openClose())
 		{

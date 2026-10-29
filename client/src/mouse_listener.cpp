@@ -64,6 +64,7 @@ C3dMouseListener::C3dMouseListener()
 	MouseWheel = 0;
 	_allowMouse = 0;
 	_inverseMouse = false;
+	_registeredServer = 0;
 }
 
 C3dMouseListener::~C3dMouseListener()
@@ -86,6 +87,19 @@ void C3dMouseListener::reset()
 
 void C3dMouseListener::operator ()(const CEvent& event)
 {
+	if (getenv("TUX_INPUT_DIAGNOSTICS"))
+	{
+		static NLMISC::TTime lastReport = 0;
+		const NLMISC::TTime now = CTime::getLocalTime();
+		if (event != EventMouseMoveId || now - lastReport > 500)
+		{
+			const CEventMouse &mouse = static_cast<const CEventMouse &>(event);
+			nlinfo("INPUT mouse move=%d up=%d button=%u pos=(%g,%g) mode=%u gui=%u angles=(%g,%g)",
+				event == EventMouseMoveId, event == EventMouseUpId, mouse.Button,
+				mouse.X, mouse.Y, _allowMouse, (uint)CGuiObjectManager::getInstance().objects.size(), MouseX, MouseY);
+			lastReport = now;
+		}
+	}
 	if(CGuiObjectManager::getInstance().objects.size()!=0)
 		return;
 	
@@ -167,6 +181,9 @@ void C3dMouseListener::operator ()(const CEvent& event)
 
 void C3dMouseListener::addToServer (CEventServer& server)
 {
+	if (_registeredServer == &server) return;
+	if (_registeredServer) removeFromServer(*_registeredServer);
+	_registeredServer = &server;
 	server.addListener (EventMouseMoveId, this);
 	server.addListener (EventMouseDownId, this);
 	server.addListener (EventMouseUpId, this);
@@ -176,9 +193,11 @@ void C3dMouseListener::addToServer (CEventServer& server)
 
 void C3dMouseListener::removeFromServer (CEventServer& server)
 {
+	if (_registeredServer != &server) return;
 	server.removeListener (EventMouseMoveId, this);
 	server.removeListener (EventMouseDownId, this);
 	server.removeListener (EventMouseUpId, this);
 	server.removeListener (EventMouseWheelId, this);
 	_AsyncListener.removeFromServer (server);
+	_registeredServer = 0;
 }

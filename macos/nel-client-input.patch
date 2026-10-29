@@ -1,0 +1,197 @@
+diff --git a/nel/src/3d/driver/opengl/driver_opengl_inputs.cpp b/nel/src/3d/driver/opengl/driver_opengl_inputs.cpp
+index 0be233e..0d2caa1 100644
+--- a/nel/src/3d/driver/opengl/driver_opengl_inputs.cpp
++++ b/nel/src/3d/driver/opengl/driver_opengl_inputs.cpp
+@@ -511,6 +511,10 @@ void CDriverGL::setMousePos(float x, float y)
+ 
+ 	if (_win == EmptyWindow || !_WindowFocus)
+ 		return;
++#ifdef NL_OS_MAC
++	// Captured Cocoa motion is relative; warping would create synthetic moves.
++	if (_MouseCaptured) return;
++#endif
+ 
+ 	sint x1 = (sint)((float)_CurrentMode.Width*x);
+ 	sint y1 = (sint)((float)_CurrentMode.Height*(1.0f-y));
+@@ -583,8 +587,9 @@ void CDriverGL::setCapture (bool b)
+ 
+ #elif defined(NL_OS_MAC)
+ 
+-	// no need to capture
++	// Keep receiving relative trackpad/mouse deltas without hitting screen edges.
+ 	_MouseCaptured = b;
++	CGAssociateMouseAndMouseCursorPosition((!b || !_WindowFocus) ? true : false);
+ 
+ #elif defined (NL_OS_UNIX)
+ 
+diff --git a/nel/src/3d/driver/opengl/driver_opengl_window.cpp b/nel/src/3d/driver/opengl/driver_opengl_window.cpp
+index fb17f95..95abc65 100644
+--- a/nel/src/3d/driver/opengl/driver_opengl_window.cpp
++++ b/nel/src/3d/driver/opengl/driver_opengl_window.cpp
+@@ -1713,6 +1713,7 @@ bool CDriverGL::destroyWindow()
+ 	}
+ 
+ #elif defined(NL_OS_MAC)
++	CGAssociateMouseAndMouseCursorPosition(true);
+ 
+ #elif defined(NL_OS_UNIX)
+ 
+diff --git a/nel/src/3d/driver/opengl/mac/cocoa_event_emitter.cpp b/nel/src/3d/driver/opengl/mac/cocoa_event_emitter.cpp
+index 4a49f00..f2b1d36 100644
+--- a/nel/src/3d/driver/opengl/mac/cocoa_event_emitter.cpp
++++ b/nel/src/3d/driver/opengl/mac/cocoa_event_emitter.cpp
+@@ -267,10 +267,19 @@ bool CCocoaEventEmitter::processMessage(NSEvent* event, CEventServer* server)
+ 	mousePos.x /= (float)viewRect.size.width;
+ 	mousePos.y /= (float)viewRect.size.height;
+ 
++	const bool relativeMove = _driver && _driver->isSystemCursorCaptured() &&
++		(event.type == NSMouseMoved || event.type == NSLeftMouseDragged || event.type == NSRightMouseDragged);
++	if (relativeMove && viewRect.size.width > 0 && viewRect.size.height > 0)
++	{
++		// Preserve NeL's centre-offset convention without warping the cursor.
++		mousePos.x = 0.5 + event.deltaX / viewRect.size.width;
++		mousePos.y = 0.5 - event.deltaY / viewRect.size.height;
++	}
++
+ 	// if the mouse event was placed outside the view, don't tell NeL :)
+-	if((mousePos.x < 0.0 || mousePos.x > 1.0 ||
++	if(!relativeMove && (mousePos.x < 0.0 || mousePos.x > 1.0 ||
+ 		mousePos.y < 0.0 || mousePos.y > 1.0) &&
+-		event.type != NSKeyDown && event.type != NSKeyUp)
++		event.type != NSKeyDown && event.type != NSKeyUp && event.type != NSFlagsChanged)
+ 	{
+ 		return false;
+ 	}
+@@ -310,7 +319,7 @@ bool CCocoaEventEmitter::processMessage(NSEvent* event, CEventServer* server)
+ 	{
+ 		NLMISC::CEvent* nelEvent;
+ 
+-		nelEvent = new NLMISC::CEventMouseMove(mousePos.x, mousePos.y, (NLMISC::TMouseButton)modifiers, this);
++		nelEvent = new NLMISC::CEventMouseMove(mousePos.x, mousePos.y, (NLMISC::TMouseButton)(modifiers | (([NSEvent pressedMouseButtons] & 1) ? NLMISC::leftButton : 0)), this);
+ 
+ 		server->postEvent(nelEvent);
+ 		break;
+@@ -365,7 +374,23 @@ bool CCocoaEventEmitter::processMessage(NSEvent* event, CEventServer* server)
+ 			modifiers, this));
+ 		break;
+ 	}
+-	case NSFlagsChanged:break;
++	case NSFlagsChanged:
++	{
++		// Cocoa sends modifier-only presses as flagsChanged, not keyDown/keyUp.
++		const unsigned int masks[] = { ctrlKeyButton, shiftKeyButton, altKeyButton };
++		const TKey keys[] = { KeyCONTROL, KeySHIFT, KeyMENU };
++		for (unsigned int i = 0; i < 3; ++i)
++		{
++			if (((_modifierButtons ^ modifiers) & masks[i]) == 0)
++				continue;
++			if (modifiers & masks[i])
++				server->postEvent(new CEventKeyDown(keys[i], modifiers, true, this));
++			else
++				server->postEvent(new CEventKeyUp(keys[i], modifiers, this));
++		}
++		_modifierButtons = modifiers;
++		break;
++	}
+ 	case NSAppKitDefined:break;
+ 	case NSSystemDefined:break;
+ 	case NSApplicationDefined:break;
+@@ -432,19 +457,9 @@ void CCocoaEventEmitter::submitEvents(CEventServer& server, bool /* allWins */)
+ 		if(!event)
+ 			break;
+ 
+-		// if there is a driver set up, forward event to it's windowProc
+-		if(_driver)
+-		{
+-			cocoaProc proc = (cocoaProc)_driver->getWindowProc();
+-
+-			if(proc)
+-				proc(_driver, [event eventRef]);
+-		}
+-		// without driver, just process the event
+-		else
+-		{
+-			processMessage(event, &server);
+-		}
++		// Use the original Cocoa event in the standalone event loop. Carbon's
++		// EventRef bridge loses relative pointer information on current macOS.
++		processMessage(event, &server);
+ 
+ 		@try
+ 		{
+diff --git a/nel/src/3d/driver/opengl/mac/cocoa_event_emitter.h b/nel/src/3d/driver/opengl/mac/cocoa_event_emitter.h
+index ee6b434..cd53d73 100644
+--- a/nel/src/3d/driver/opengl/mac/cocoa_event_emitter.h
++++ b/nel/src/3d/driver/opengl/mac/cocoa_event_emitter.h
+@@ -37,6 +37,7 @@ namespace NLMISC
+ class CCocoaEventEmitter : public IEventEmitter
+ {
+ 	bool             _eventLoop;
++	unsigned int     _modifierButtons;
+ 	NL3D::IDriver*   _driver;
+ 	CocoaOpenGLView* _glView;
+ 
+@@ -45,6 +46,7 @@ class CCocoaEventEmitter : public IEventEmitter
+ 
+ public:
+ 	CCocoaEventEmitter() :
++		_modifierButtons(0),
+ 		_driver(NULL),
+ 		_glView(nil),
+ 		_server(NULL) { }
+@@ -53,6 +55,11 @@ public:
+ 	bool         processMessage(NSEvent* event, CEventServer* server = NULL);
+ 	virtual void submitEvents(CEventServer& server, bool allWindows);
+ 	bool         handleQuitRequest();
++	void         focusChanged(bool focused)
++	{
++		if (!focused) _modifierButtons = 0;
++		if (_server) _server->postEvent(new CEventSetFocus(focused, this));
++	}
+ 
+ 	virtual bool copyTextToClipboard(const std::string &text);
+ 	virtual bool pasteTextFromClipboard(std::string &text);
+diff --git a/nel/src/3d/driver/opengl/mac/cocoa_window_delegate.mm b/nel/src/3d/driver/opengl/mac/cocoa_window_delegate.mm
+index 44031f7..67d5953 100644
+--- a/nel/src/3d/driver/opengl/mac/cocoa_window_delegate.mm
++++ b/nel/src/3d/driver/opengl/mac/cocoa_window_delegate.mm
+@@ -61,6 +61,8 @@ - (void)windowDidBecomeKey:(NSNotification *)notification
+ 		return;
+ 
+ 	_driver->_WindowFocus = true;
++	CGAssociateMouseAndMouseCursorPosition(!_driver->isSystemCursorCaptured());
++	_driver->_EventEmitter.focusChanged(true);
+ }
+ - (void)windowDidResignKey:(NSNotification *)notification;
+ {
+@@ -68,6 +70,8 @@ - (void)windowDidResignKey:(NSNotification *)notification;
+ 		return;
+ 
+ 	_driver->_WindowFocus = false;
++	CGAssociateMouseAndMouseCursorPosition(true);
++	_driver->_EventEmitter.focusChanged(false);
+ }
+ 
+ @end
+diff --git a/nel/src/misc/event_server.cpp b/nel/src/misc/event_server.cpp
+index eceb783..9c73aae 100644
+--- a/nel/src/misc/event_server.cpp
++++ b/nel/src/misc/event_server.cpp
+@@ -102,7 +102,7 @@ bool CEventServer::pumpEvent(CEvent* event)
+ 	uint64 id = (uint64) *event;
+ 
+ 	// looking for the first occurence of id
+-	mapListener::iterator it = _Listeners.find(id);
++	mapListener::iterator it = _Listeners.lower_bound(id);
+ 
+ 	// calling every callbacks
+ 	while(it!=_Listeners.end() && (uint64)(*it).first == id)
+@@ -133,7 +133,7 @@ void CEventServer::addListener(CClassId id, IEventListener* listener )
+ void CEventServer::removeListener(CClassId id, IEventListener* listener )
+ {
+ 	// looking for the first occurence of id
+-	mapListener::iterator it = _Listeners.find(id);
++	mapListener::iterator it = _Listeners.lower_bound(id);
+ 
+ 	// looking for occurence with the right callback
+ 	while(it!=_Listeners.end() && (*it).first == id)

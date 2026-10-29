@@ -87,6 +87,7 @@ private:
 
 	uint32 _allowMouse;
 	bool _inverseMouse;
+	NLMISC::CEventServer *_registeredServer;
 
 	NLMISC::CEventListenerAsync	_AsyncListener;
 };

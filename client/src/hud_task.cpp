@@ -86,7 +86,6 @@ void CHudTask::render()
 	float ptdt = 1.0f;
 	bool displaySessionInfo = false;
 	float partTime = CMtpTarget::getInstance().timeBeforeSessionStart();
-	static uint32 oldPartTime = 0;
 	
 	if(CMtpTarget::getInstance().State == CMtpTarget::eStartSession)
 	{		
@@ -108,15 +107,6 @@ void CHudTask::render()
 			str = "Ready ?";
 		else if (partTime > 0.0f)
 		{
-			uint32 newPartTime = uint32(partTime)+1;
-
-			if(oldPartTime != newPartTime)
-			{
-				oldPartTime = newPartTime;
-				//CSoundManager::instance().playSound(CSoundManager::TSound(CSoundManager::Ready0+newPartTime));
-				CSoundManager::instance().playGUISound ("ready" + toString("%u", newPartTime));
-			}
-
 			str = toString("%u", ((uint32) partTime)+1);
 			ptdt = partTime - (float)(sint)partTime;
 		}
@@ -127,12 +117,6 @@ void CHudTask::render()
 	{
 		if (partTime < 2.0f)
 		{
-			if(oldPartTime != 0)
-			{
-				oldPartTime = 0;
-				CSoundManager::instance().playGUISound ("ready0");
-			}
-
 			str = "Go";
 		}
 	}

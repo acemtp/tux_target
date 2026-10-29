@@ -171,8 +171,10 @@ void C3DTask::init()
 	if(CConfigFileTask::instance().configFile().getVar("VSync").asInt() == 0)
 		Driver->setSwapVBLInterval(0);
 
+#ifndef TUX_MODERN_NEL
 	if(CConfigFileTask::instance().configFile().getVar("NativeFragmentProgramsOnly").asInt() == 0)
 		Driver->forceNativeFragmentPrograms(false);
+#endif
 
 #ifdef NL_OS_WINDOWS
 	Fullscreen = CConfigFileTask::instance().configFile().getVar("Fullscreen").asInt()==1;
@@ -295,6 +297,20 @@ void C3DTask::update()
 
 	Scene->animate(CTimeTask::instance().time());
 	Driver->EventServer.pump(true);
+	if (getenv("TUX_INPUT_DIAGNOSTICS"))
+	{
+		const uint mask = (kbDown(KeyLEFT) ? 1 : 0) | (kbDown(KeyRIGHT) ? 2 : 0)
+			| (kbDown(KeyUP) ? 4 : 0) | (kbDown(KeyDOWN) ? 8 : 0)
+			| (kbDown(KeyCONTROL) ? 16 : 0);
+		static uint lastMask = ~0u;
+		if (mask != lastMask)
+		{
+			nlinfo("INPUT keys=%u entity=%u follow=%d state=%d dt=%g", mask,
+				CMtpTarget::instance().controler().getControledEntity(), FollowEntity,
+				CMtpTarget::instance().State, CTimeTask::instance().deltaTime());
+			lastMask = mask;
+		}
+	}
 	if(kbDown(KeySHIFT) && kbPressed(KeyF1))
 		CTaskManager::instance().switchBench();
 }

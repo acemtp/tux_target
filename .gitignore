@@ -1,0 +1,7 @@
+/.deps/
+/build-macos/
+/build-macos-server/
+/runtime-macos/
+/build-macos-client/
+/runtime-macos-client/
+/dist/

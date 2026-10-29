@@ -159,6 +159,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 #ifdef NL_OS_MAC
 #include <CoreFoundation/CoreFoundation.h>
+#include <limits.h>
+#include <unistd.h>
 #endif
 
 int main(int argc, char **argv)
@@ -170,18 +172,14 @@ int main(int argc, char **argv)
 	}
 
 #ifdef NL_OS_MAC
-	CFBundleRef bundle;
-	bundle = CFBundleGetMainBundle();
-	nldebug("main %p", bundle);
-	UInt32 ver = CFBundleGetVersionNumber (bundle);
-	nlinfo("version %d", ver);
-	CFURLRef url = CFBundleCopyResourcesDirectoryURL(bundle);
-	if (ver && url)
+	CFBundleRef bundle = CFBundleGetMainBundle();
+	CFURLRef url = bundle ? CFBundleCopyResourcesDirectoryURL(bundle) : NULL;
+	if (url)
 	{
-		CFStringRef	str;
-		str = CFURLCopyFileSystemPath(CFURLCopyAbsoluteURL(url), kCFURLPOSIXPathStyle);
-		nlinfo("PATH %p %p %s", url, str, CFStringGetCStringPtr(str, CFStringGetSmallestEncoding(str)));
-		chdir(CFStringGetCStringPtr(str, CFStringGetSmallestEncoding(str)));
+		UInt8 resourcePath[PATH_MAX];
+		if (CFURLGetFileSystemRepresentation(url, true, resourcePath, sizeof(resourcePath)))
+			chdir(reinterpret_cast<const char *>(resourcePath));
+		CFRelease(url);
 	}
 #endif // NL_OS_MAC
 

@@ -24,6 +24,7 @@
 //
 
 #include "stdpch.h"
+#include <random>
 #include <string>
 #include <fstream>
 #include <algorithm>
@@ -74,7 +75,7 @@ USource *CSoundManager::createTTSource (TSound soundID)
 	if(soundID==Splash)
 		return AudioMixer->createSource(CStringMapper::map("splash"));
 	if(soundID==Impact)
-		return AudioMixer->createSource(CStringMapper::map("beep"));
+		return AudioMixer->createSource(CStringMapper::map("impact"));
 
 	return 0;
 }
@@ -97,6 +98,17 @@ void CSoundManager::init()
 	 * If the sound driver cannot be loaded, an exception is thrown.
 	 */
 	AudioMixer = UAudioMixer::createAudioMixer();
+
+#ifdef TUX_MODERN_NEL
+	// Sound definitions are reconstructed by the macOS packaging script.
+	CPath::addSearchPath("audio", true, false);
+	const string audioCache = CPath::standardizePath(
+		CConfigFileTask::instance().configFile().getVar("CacheDirectory").asString()) + "audio/";
+	CFile::createDirectoryTree(audioCache);
+	AudioMixer->setPackedSheetOption(audioCache, true);
+	UAudioMixer::buildSampleBank(CFile::getPath(CPath::lookup("open.wav")), audioCache, "mtp_target");
+	CPath::addSearchPath(audioCache, false, false);
+#endif
 
 //	// Set the sample path before init, this allow the mixer to build the sample banks
 //	AudioMixer->setSamplePath("/home/xnovak5/c/sound_sources/data/samplebank");
@@ -122,6 +134,10 @@ void CSoundManager::init()
 		NULL, true, driverType,
 		CConfigFileTask::getInstance().configFile().exists("SoundForceSoftware") ? CConfigFileTask::getInstance().configFile().getVar("SoundForceSoftware").asBool() : true);
 
+#ifdef TUX_MODERN_NEL
+	AudioMixer->loadSampleBank(false, "mtp_target");
+#endif
+	isInit = true;
 	if (CConfigFileTask::instance().configFile().getVar("Sound").asInt() == 1)
 	{
 		PlaySound = true;
@@ -131,8 +147,6 @@ void CSoundManager::init()
 	setSoundVolume(CConfigFileTask::instance().configFile().getVar("SoundVolume").asFloat());
 
 	loadPlayList();
-
-	isInit = true;
 
 	play();
 }
@@ -243,7 +257,8 @@ void CSoundManager::loadPlayList()
 	}
 	if (CConfigFileTask::instance().configFile().getVar("M3UShuffle").asInt() == 1)
 	{
-		random_shuffle(m3uVector.begin(), m3uVector.end());
+		std::mt19937 playlistRandom(std::random_device{}());
+		std::shuffle(m3uVector.begin(), m3uVector.end(), playlistRandom);
 		/*
 		srand (CTime::getSecondsSince1970());
 		for(uint32 i = 0; i < m3uVector.size(); i++)
@@ -334,7 +349,8 @@ void CSoundManager::play ()
 			if(AudioMixer->playMusic(m3uVector[m3uNowPlaying], 0, true, false))
 			{
 				string SongTitle;
-				if(AudioMixer->getSongTitle(m3uVector[m3uNowPlaying], SongTitle))
+				float songLength = 0.0f;
+				if(AudioMixer->getSongTitle(m3uVector[m3uNowPlaying], SongTitle, songLength))
 				{
 					CHudTask::getInstance().addSysMessage("Now playing " + SongTitle );
 				}

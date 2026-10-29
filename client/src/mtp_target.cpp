@@ -123,7 +123,8 @@ void CMtpTarget::init()
 	for(uint i = 0; i < var2.size(); i++)
 		InfoLog->addNegativeFilter(var2.asString(i).c_str());
 
-	if(CConfigFileTask::getInstance().configFile().getVar("Sound").asInt() == 1)
+	if(CConfigFileTask::getInstance().configFile().getVar("Sound").asInt() == 1
+		|| CConfigFileTask::getInstance().configFile().getVar("Music").asInt() == 1)
 		CTaskManager::instance().add(CSoundManager::instance(), 55);
 	//nlinfo("Default tasks set");
 	
@@ -469,7 +470,9 @@ void mtpTarget::init()
 	
 //	SleepTime = CConfigFileTask::getInstance().configFile().getVar("Sleep").asInt();
 
+#ifndef TUX_MODERN_NEL
 	setReportEmailFunction ((void*)sendEmail);
+#endif
 
 	CMtpTarget::getInstance().State = CMtpTarget::eLoginPassword;
 	
@@ -674,6 +677,8 @@ void mtpTarget::renderInterface()
 void mtpTarget::everybodyReady()
 {
 	// everybody is ok, let s count down
+	// ready.wav contains the entire "5, 4, 3, 2, 1, go" sequence.
+	CSoundManager::instance().playGUISound("ready");
 	CMtpTarget::getInstance().State = CMtpTarget::eReady;
 	CEntityManager::getInstance().everybodyReady(true);
 }

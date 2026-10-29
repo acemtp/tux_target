@@ -1,0 +1,61 @@
+diff --git a/CMakeModules/nel.cmake b/CMakeModules/nel.cmake
+index 6c0b72c..2073a4b 100644
+--- a/CMakeModules/nel.cmake
++++ b/CMakeModules/nel.cmake
+@@ -958,7 +958,7 @@ MACRO(NL_SETUP_BUILD)
+         IF(TARGETS_COUNT EQUAL 1)
+           IF(TARGET_ARM)
+             IF(TARGET_AARCH64)
+-              ADD_PLATFORM_FLAGS("-arch aarch64 -DHAVE_AARCH64")
++              ADD_PLATFORM_FLAGS("-arch arm64 -DHAVE_AARCH64")
+             ENDIF()
+             IF(TARGET_ARMV7S)
+               ADD_PLATFORM_FLAGS("-arch armv7s -DHAVE_ARMV7S")
+@@ -976,7 +976,10 @@ MACRO(NL_SETUP_BUILD)
+               ADD_PLATFORM_FLAGS("-arch armv5 -DHAVE_ARMV5")
+             ENDIF()
+ 
+-            ADD_PLATFORM_FLAGS("-mthumb -DHAVE_ARM")
++            ADD_PLATFORM_FLAGS("-DHAVE_ARM")
++            IF(NOT TARGET_AARCH64)
++              ADD_PLATFORM_FLAGS("-mthumb")
++            ENDIF()
+           ENDIF()
+ 
+           IF(TARGET_X64)
+@@ -992,7 +995,7 @@ MACRO(NL_SETUP_BUILD)
+           # Not using CMAKE_OSX_ARCHITECTURES, HAVE_XXX already defined before
+           IF(TARGET_ARM)
+             IF(TARGET_AARCH64)
+-              ADD_PLATFORM_FLAGS("-arch aarch64")
++              ADD_PLATFORM_FLAGS("-arch arm64")
+             ENDIF()
+ 
+             IF(TARGET_ARMV7S)
+@@ -1219,7 +1222,7 @@ MACRO(NL_SETUP_BUILD)
+ 
+     # hardening
+     IF(NOT EMSCRIPTEN)
+-      ADD_PLATFORM_FLAGS("-fstack-protector --param=ssp-buffer-size=4")
++      ADD_PLATFORM_FLAGS("-fstack-protector")
+ 
+       # If -fstack-protector or -fstack-protector-all enabled, enable too new warnings and fix possible link problems
+       IF(WITH_WARNINGS)
+diff --git a/nel/include/nel/misc/hierarchical_timer.h b/nel/include/nel/misc/hierarchical_timer.h
+index cf85a4c..71acc67 100644
+--- a/nel/include/nel/misc/hierarchical_timer.h
++++ b/nel/include/nel/misc/hierarchical_timer.h
+@@ -132,8 +132,13 @@ public:
+ #ifdef NL_DEBUG
+ 		nlassert(!_Started);
+ #endif
++		// Apple Silicon timers may not advance between two profiling reads.
++#ifdef NL_OS_MAC
++		return _NumTicks ? _NumTicks : 1;
++#else
+ 		nlassert(_NumTicks != 0);
+ 		return _NumTicks;
++#endif
+ 	}
+ 	// This compute the duration of start and stop (in cycles).
+ 	static void init();
